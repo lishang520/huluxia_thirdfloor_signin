@@ -18,10 +18,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 初始化 Python 环境
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10.11'
 
@@ -30,13 +30,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r ./requirements.txt
 
+      # Secrets 为空时脚本会在 1 秒内抛 ValueError 直接退出，
+      # 这里先给出人能看懂的报错，不用再去翻 traceback
+      - name: 预检 ACCOUNTS
+        env:
+          ACCOUNTS: ${{ secrets.ACCOUNTS }}
+        run: |
+          if [ -z "${ACCOUNTS}" ]; then
+            echo "::error title=缺少 ACCOUNTS::Settings → Secrets and variables → Actions 中没有名为 ACCOUNTS 的 Secret（注意大小写与位置，必须是 Repository secret）"
+            exit 1
+          fi
+          valid=$(printf '%s\n' "$ACCOUNTS" | grep -c ',' || true)
+          echo "ACCOUNTS 中带英文逗号的行数：$valid"
+          if [ "$valid" -eq 0 ]; then
+            echo "::error title=ACCOUNTS 格式不对::每行必须是「手机号,密码」，用英文逗号分隔"
+            exit 1
+          fi
+
       - name: 开始运行
         id: signin-outputs
         env:
-          # 不需要的通知方式直接注释掉；需要哪种就取消注释并配置对应 Secret
-          NOTIFIER_TYPE: ${{ secrets.NOTIFIER_TYPE }}
-          # EMAIL_CONFIG: ${{ secrets.EMAIL_CONFIG }}
+          # 通知方式直接写死在流水线里，不依赖 Secret，避免再被 Secret 名称规则卡住
+          #   不推送     → none      （当前值）
+          #   企业微信   → wechat    （同时要建 Secret：WECHAT_ROBOT_URL）
+          #   邮箱       → email     （同时要建 Secret：EMAIL_CONFIG）
+          NOTIFIER_TYPE: none
           # WECHAT_ROBOT_URL: ${{ secrets.WECHAT_ROBOT_URL }}
+          # EMAIL_CONFIG: ${{ secrets.EMAIL_CONFIG }}
           ACCOUNTS: ${{ secrets.ACCOUNTS }}
           TZ: Asia/Shanghai
         run: python ./main.py
