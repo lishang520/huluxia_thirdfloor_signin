@@ -2,30 +2,49 @@ name: Update Last Update Date
 
 on:
   push:
-    branches:
-      - master
+    branches: [ master ]
+  workflow_dispatch:
+
+# 关键：fork / 新仓库的 GITHUB_TOKEN 默认可能是只读，必须在这里显式声明写权限
+permissions:
+  contents: write
+
+concurrency:
+  group: update-date
+  cancel-in-progress: false
 
 jobs:
   update-date:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Update last update date
         run: |
-          # 获取当前日期
-          CURRENT_DATE=$(date -u +"%Y年%m月%d日 %H点%M分" --date='8 hours')
-          
-          # 替换 README.md 中的日期
-          sed -i "s/###### \*\*最后更新日期.*\*\*/###### \*\*最后更新日期：$CURRENT_DATE\*\*/" README.md
+          CURRENT_DATE=$(TZ=Asia/Shanghai date +"%Y年%m月%d日 %H点%M分")
+          echo "当前日期: $CURRENT_DATE"
+          if grep -q "最后更新日期" README.md; then
+            sed -i -E "s/^###### \*\*最后更新日期.*\*\*$/###### **最后更新日期：${CURRENT_DATE}**/" README.md
+          else
+            printf '\n###### **最后更新日期：%s**\n' "$CURRENT_DATE" >> README.md
+          fi
+          echo "--- 变更预览 ---"
+          git diff -- README.md | head -n 40
 
-      - name: Commit changes
+      - name: Commit and push changes
         run: |
-          git config --local user.name "github-actions"
-          git config --local user.email "github-actions@github.com"
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- README.md; then
+            echo "README 无变化，跳过提交"
+            exit 0
+          fi
           git add README.md
-          git commit -m "自动更新最后更新日期" || echo "无更改"
-          git push origin master
-
+          git commit -m "chore: 自动更新最后更新日期 [skip ci]"
+          # 防止并发/延迟导致的 non-fast-forward
+          git pull --rebase origin master || true
+          git push origin HEAD:master
